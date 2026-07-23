@@ -175,6 +175,17 @@ body{
 .card-title{ font-size:0.98rem; font-weight:700; margin:6px 0 4px; line-height:1.25; }
 .card-meta{ font-size:0.72rem; color:var(--dim); }
 
+.card-comment-input{
+  display:block; width:100%; margin-top:10px; font:inherit; font-style:italic; font-size:0.78rem;
+  color:var(--ink); background:transparent; border:none;
+  resize:none; overflow:hidden; padding:0; min-height:18px;
+}
+.card-comment-input::placeholder{ color:var(--dim); opacity:1; }
+.card-comment-input:focus-visible{ outline:none; }
+.card-comment{
+  margin-top:10px; font-size:0.78rem; font-style:italic; color:var(--ink);
+}
+
 .card-foot{
   display:flex; justify-content:space-between; align-items:center;
   border-top:1px dashed var(--line); margin-top:12px; padding-top:10px;

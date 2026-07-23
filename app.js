@@ -154,6 +154,9 @@ function renderGrid() {
             <div class="card-meta">${metaLine}</div>
           </div>
         </div>
+        ${editable
+          ? `<textarea class="card-comment-input" data-action="comment" data-id="${m.id}" rows="1" placeholder="Add a note…">${escapeHtml(m.comment || "")}</textarea>`
+          : (m.comment ? `<div class="card-comment">${escapeHtml(m.comment)}</div>` : "")}
         <div class="card-foot">
           <button class="stars ${editable ? "editable" : ""}" data-action="rate" data-id="${m.id}" ${editable ? "" : "disabled"}>${starsMarkup(m.rating)}</button>
           <button class="stamp ${m.status} ${editable ? "editable" : ""}" data-action="cycle-status" data-id="${m.id}" ${editable ? "" : "disabled"}>${STATUS_LABEL[m.status]}</button>
@@ -161,6 +164,11 @@ function renderGrid() {
       </div>
     `;
   }).join("");
+
+  els.grid.querySelectorAll(".card-comment-input").forEach(ta => {
+    ta.style.height = "auto";
+    ta.style.height = ta.scrollHeight + "px";
+  });
 }
 
 // ---------- Drawer switching ----------
@@ -420,6 +428,13 @@ async function withdrawMovie(id) {
   await deleteDoc(doc(db, "users", currentUser.uid, "movies", id));
 }
 
+async function saveComment(id, text) {
+  const m = movies.find(x => x.id === id);
+  if (!m || !currentUser) return;
+  if ((m.comment || "") === text) return;
+  await updateDoc(doc(db, "users", currentUser.uid, "movies", id), { comment: text });
+}
+
 // ---------- TMDb search ----------
 let searchTimer = null;
 async function runSearch(qText) {
@@ -546,6 +561,18 @@ els.grid.addEventListener("click", e => {
     const rating = Math.min(5, Math.max(1, Math.ceil(relX / starWidth)));
     setRating(id, rating);
   }
+});
+
+els.grid.addEventListener("input", e => {
+  const ta = e.target.closest(".card-comment-input");
+  if (!ta) return;
+  ta.style.height = "auto";
+  ta.style.height = ta.scrollHeight + "px";
+});
+els.grid.addEventListener("focusout", e => {
+  const ta = e.target.closest(".card-comment-input");
+  if (!ta) return;
+  saveComment(ta.dataset.id, ta.value.trim());
 });
 
 els.loginBtn.addEventListener("click", () => {
