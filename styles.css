@@ -56,6 +56,30 @@ body{
   font-size:0.78rem; line-height:1.5; background:rgba(163,39,31,0.06);
 }
 
+.section-tabs{ display:flex; gap:0; margin:24px 0 0; border-bottom:2px solid var(--ink); }
+.section-tab{
+  font:inherit; font-size:0.85rem; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+  background:transparent; border:none; padding:8px 4px; margin-right:24px; color:var(--dim);
+  cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px;
+}
+.section-tab.active{ color:var(--ink); border-bottom-color:var(--rust); }
+.section-tab:focus-visible{ outline:2px solid var(--teal); outline-offset:2px; }
+
+.viewing-banner{ font-size:0.8rem; color:var(--dim); margin:14px 0 0; }
+.viewing-banner strong{ color:var(--ink); }
+
+.friends-list{ display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:14px; padding:20px 2px 8px; }
+.friend-card{
+  background:var(--card); border:1px solid var(--ink); padding:14px 16px; cursor:pointer;
+  box-shadow:2px 2px 0 rgba(35,36,31,0.1); text-align:left; font:inherit; color:var(--ink);
+}
+.friend-card:hover{ box-shadow:3px 3px 0 rgba(35,36,31,0.16); }
+.friend-card:focus-visible{ outline:2px solid var(--teal); outline-offset:2px; }
+.friend-name{ font-weight:700; font-size:0.95rem; }
+.friend-count{ font-size:0.7rem; color:var(--dim); margin-top:4px; }
+
+.modal-toggle{ text-align:center; margin:2px 0 0; }
+
 .tabs{ display:flex; gap:10px; align-items:center; padding:20px 0 8px; flex-wrap:wrap; }
 .tab{
   font:inherit; font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;

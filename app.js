@@ -1,10 +1,11 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
-  getFirestore, collection, addDoc, doc, updateDoc, deleteDoc,
+  getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, setDoc, getDoc, getDocs,
   onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import {
-  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
+  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile,
+  signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
 const CONFIG = window.APP_CONFIG || {};
@@ -23,9 +24,20 @@ const STATUS_LABEL = { "to-watch":"To Watch", "watching":"Watching", "watched":"
 const els = {
   loginBtn: document.getElementById("login-btn"),
   authStatus: document.getElementById("auth-status"),
-  authEmail: document.getElementById("auth-email"),
+  authName: document.getElementById("auth-name"),
   logoutBtn: document.getElementById("logout-btn"),
   configWarning: document.getElementById("config-warning"),
+
+  sectionTabs: document.getElementById("section-tabs"),
+  drawerSection: document.getElementById("drawer-section"),
+  friendsSection: document.getElementById("friends-section"),
+  friendsList: document.getElementById("friends-list"),
+  friendsEmpty: document.getElementById("friends-empty"),
+  viewingBanner: document.getElementById("viewing-banner"),
+  viewingName: document.getElementById("viewing-name"),
+  backToFriends: document.getElementById("back-to-friends"),
+  signedOutMsg: document.getElementById("signed-out-msg"),
+
   tabs: document.getElementById("status-tabs"),
   addBtn: document.getElementById("add-btn"),
   searchPanel: document.getElementById("search-panel"),
@@ -36,7 +48,13 @@ const els = {
   grid: document.getElementById("grid"),
   emptyMsg: document.getElementById("empty-msg"),
   cardCount: document.getElementById("card-count"),
+
   loginModal: document.getElementById("login-modal"),
+  authModalTitle: document.getElementById("auth-modal-title"),
+  authSubmitBtn: document.getElementById("auth-submit-btn"),
+  authModeToggle: document.getElementById("auth-mode-toggle"),
+  nameField: document.getElementById("name-field"),
+  signupName: document.getElementById("signup-name"),
   loginForm: document.getElementById("login-form"),
   loginEmail: document.getElementById("login-email"),
   loginPassword: document.getElementById("login-password"),
@@ -46,7 +64,12 @@ const els = {
 
 let movies = [];
 let currentFilter = "all";
-let loggedIn = false;
+let currentUser = null;
+let section = "mine"; // 'mine' | 'friends' | 'friend'
+let viewingUid = null;
+let viewingReadOnly = true;
+let authMode = "signin";
+let unsubscribeMovies = null;
 let db = null;
 let auth = null;
 
@@ -76,6 +99,17 @@ function starsMarkup(rating) {
   return s;
 }
 
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str ?? "";
+  return div.innerHTML;
+}
+
+function fallbackName(user) {
+  return user.displayName || (user.email ? user.email.split("@")[0] : "Member");
+}
+
+// ---------- Rendering ----------
 function renderGrid() {
   const filtered = currentFilter === "all" ? movies : movies.filter(m => m.status === currentFilter);
   els.emptyMsg.hidden = filtered.length !== 0;
@@ -83,61 +117,138 @@ function renderGrid() {
     ? "No cards filed yet."
     : `No cards filed under "${STATUS_LABEL[currentFilter]}".`;
   els.cardCount.textContent = movies.length;
+  els.addBtn.hidden = viewingReadOnly;
 
+  const editable = !viewingReadOnly;
   els.grid.innerHTML = filtered.map((m, i) => {
     const cardNo = String(i + 1).padStart(3, "0");
     const posterMarkup = m.posterUrl
       ? `<img class="card-poster" src="${m.posterUrl}" alt="${escapeHtml(m.title)} poster">`
       : `<div class="card-poster-blank">NO STILL<br>ON FILE</div>`;
-    const editableStamp = loggedIn ? "editable" : "";
-    const editableStars = loggedIn ? "editable" : "";
+    const metaLine = `${m.year || "—"}${m.director ? ` · Dir. ${escapeHtml(m.director)}` : ""}`;
     return `
       <div class="card" data-id="${m.id}">
-        ${loggedIn ? `<button class="card-delete" data-action="delete" data-id="${m.id}">Withdraw</button>` : ""}
+        ${editable ? `<button class="card-delete" data-action="delete" data-id="${m.id}">Withdraw</button>` : ""}
         <div class="card-tab" style="background:${colorForGenre(m.genre)};">${escapeHtml(m.genre)}</div>
         <div class="card-body">
           ${posterMarkup}
           <div class="card-info">
             <div class="card-no">CARD NO. ${cardNo}</div>
             <div class="card-title">${escapeHtml(m.title)}</div>
-            <div class="card-meta">${m.year || "—"}</div>
+            <div class="card-meta">${metaLine}</div>
           </div>
         </div>
         <div class="card-foot">
-          <button class="stars ${editableStars}" data-action="rate" data-id="${m.id}" ${loggedIn ? "" : "disabled"}>${starsMarkup(m.rating)}</button>
-          <button class="stamp ${m.status} ${editableStamp}" data-action="cycle-status" data-id="${m.id}" ${loggedIn ? "" : "disabled"}>${STATUS_LABEL[m.status]}</button>
+          <button class="stars ${editable ? "editable" : ""}" data-action="rate" data-id="${m.id}" ${editable ? "" : "disabled"}>${starsMarkup(m.rating)}</button>
+          <button class="stamp ${m.status} ${editable ? "editable" : ""}" data-action="cycle-status" data-id="${m.id}" ${editable ? "" : "disabled"}>${STATUS_LABEL[m.status]}</button>
         </div>
       </div>
     `;
   }).join("");
 }
 
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str ?? "";
-  return div.innerHTML;
-}
-
-// ---------- Firestore wiring ----------
-function startListening() {
-  const q = query(collection(db, "movies"), orderBy("addedAt", "desc"));
-  onSnapshot(q, snap => {
+// ---------- Drawer switching ----------
+function watchMovies(uid) {
+  if (unsubscribeMovies) { unsubscribeMovies(); unsubscribeMovies = null; }
+  const q = query(collection(db, "users", uid, "movies"), orderBy("addedAt", "desc"));
+  unsubscribeMovies = onSnapshot(q, snap => {
     movies = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderGrid();
   }, err => {
-    showStatus("Couldn't load the drawer: " + err.message, true);
+    showStatus("Couldn't load this drawer: " + err.message, true);
   });
 }
 
+function setSectionTabActive(name) {
+  els.sectionTabs.querySelectorAll(".section-tab").forEach(t => {
+    t.classList.toggle("active", t.dataset.section === name);
+  });
+}
+
+function showMyDrawer() {
+  section = "mine";
+  setSectionTabActive("mine");
+  els.viewingBanner.hidden = true;
+  els.friendsSection.hidden = true;
+
+  if (!currentUser) {
+    els.drawerSection.hidden = true;
+    els.signedOutMsg.hidden = false;
+    if (unsubscribeMovies) { unsubscribeMovies(); unsubscribeMovies = null; }
+    movies = [];
+    return;
+  }
+  els.signedOutMsg.hidden = true;
+  els.drawerSection.hidden = false;
+  viewingUid = currentUser.uid;
+  viewingReadOnly = false;
+  watchMovies(viewingUid);
+}
+
+async function loadFriendsList() {
+  els.friendsList.innerHTML = "";
+  els.friendsEmpty.hidden = true;
+  try {
+    const snap = await getDocs(collection(db, "profiles"));
+    const others = snap.docs.map(d => ({ uid: d.id, ...d.data() }))
+      .filter(p => !currentUser || p.uid !== currentUser.uid);
+    if (!others.length) { els.friendsEmpty.hidden = false; return; }
+    els.friendsList.innerHTML = others.map(p => `
+      <button class="friend-card" data-uid="${p.uid}">
+        <div class="friend-name">${escapeHtml(p.displayName || "Unnamed")}</div>
+        <div class="friend-count">View drawer →</div>
+      </button>
+    `).join("");
+    els.friendsList.querySelectorAll(".friend-card").forEach(btn => {
+      const p = others.find(x => x.uid === btn.dataset.uid);
+      btn.addEventListener("click", () => viewFriendDrawer(p.uid, p.displayName || "Unnamed"));
+    });
+  } catch (e) {
+    showStatus("Couldn't load friends: " + e.message, true);
+  }
+}
+
+function showFriends() {
+  section = "friends";
+  setSectionTabActive("friends");
+  els.drawerSection.hidden = true;
+  els.viewingBanner.hidden = true;
+  els.signedOutMsg.hidden = true;
+  els.friendsSection.hidden = false;
+  loadFriendsList();
+}
+
+function viewFriendDrawer(uid, name) {
+  section = "friend";
+  els.friendsSection.hidden = true;
+  els.signedOutMsg.hidden = true;
+  els.drawerSection.hidden = false;
+  els.viewingBanner.hidden = false;
+  els.viewingName.textContent = name;
+  viewingUid = uid;
+  viewingReadOnly = true;
+  watchMovies(uid);
+}
+
+// ---------- Firestore writes (always on the signed-in user's own drawer) ----------
 async function addMovie(result) {
   const dup = movies.find(m => m.tmdbId === result.id);
   if (dup) { showStatus(`"${result.title}" is already on your list.`, true); return; }
   const genreId = (result.genre_ids || [])[0];
-  await addDoc(collection(db, "movies"), {
+  let director = null;
+  try {
+    const cRes = await fetch(`https://api.themoviedb.org/3/movie/${result.id}/credits?api_key=${TMDB_KEY}`);
+    const cData = await cRes.json();
+    const d = (cData.crew || []).find(c => c.job === "Director");
+    director = d ? d.name : null;
+  } catch (e) { /* poster/title still work without a director credit */ }
+
+  await addDoc(collection(db, "users", currentUser.uid, "movies"), {
     tmdbId: result.id,
     title: result.title,
     year: (result.release_date || "").slice(0, 4),
     genre: GENRE_MAP[genreId] || "Unspecified",
+    director,
     posterUrl: result.poster_path ? TMDB_IMG + result.poster_path : null,
     status: "to-watch",
     rating: 0,
@@ -148,23 +259,23 @@ async function addMovie(result) {
 
 async function cycleStatus(id) {
   const m = movies.find(x => x.id === id);
-  if (!m) return;
+  if (!m || !currentUser) return;
   const next = STATUS_ORDER[(STATUS_ORDER.indexOf(m.status) + 1) % STATUS_ORDER.length];
-  await updateDoc(doc(db, "movies", id), { status: next });
+  await updateDoc(doc(db, "users", currentUser.uid, "movies", id), { status: next });
 }
 
 async function setRating(id, rating) {
   const m = movies.find(x => x.id === id);
-  if (!m) return;
+  if (!m || !currentUser) return;
   const next = m.rating === rating ? 0 : rating;
-  await updateDoc(doc(db, "movies", id), { rating: next });
+  await updateDoc(doc(db, "users", currentUser.uid, "movies", id), { rating: next });
 }
 
 async function withdrawMovie(id) {
   const m = movies.find(x => x.id === id);
-  if (!m) return;
+  if (!m || !currentUser) return;
   if (!confirm(`Withdraw "${m.title}" from the drawer?`)) return;
-  await deleteDoc(doc(db, "movies", id));
+  await deleteDoc(doc(db, "users", currentUser.uid, "movies", id));
 }
 
 // ---------- TMDb search ----------
@@ -208,7 +319,56 @@ async function runSearch(qText) {
   }
 }
 
+// ---------- Auth ----------
+async function ensureProfile(user, displayNameOverride) {
+  const ref = doc(db, "profiles", user.uid);
+  if (displayNameOverride) {
+    await setDoc(ref, { displayName: displayNameOverride, email: user.email, updatedAt: serverTimestamp() }, { merge: true });
+    return;
+  }
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    await setDoc(ref, { displayName: fallbackName(user), email: user.email, updatedAt: serverTimestamp() }, { merge: true });
+  }
+}
+
+function authErrorMessage(err) {
+  switch (err.code) {
+    case "auth/email-already-in-use": return "That email already has an account — try signing in instead.";
+    case "auth/weak-password": return "Password should be at least 6 characters.";
+    case "auth/invalid-email": return "That email address looks invalid.";
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+    case "auth/invalid-credential": return "Couldn't sign in — check your email and password.";
+    default: return err.message || "Something went wrong.";
+  }
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  els.nameField.hidden = mode !== "signup";
+  els.authModalTitle.textContent = mode === "signup" ? "Create Account" : "Sign In";
+  els.authSubmitBtn.textContent = mode === "signup" ? "Create Account" : "Sign In";
+  els.authModeToggle.textContent = mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account";
+  els.loginError.hidden = true;
+}
+
+function updateAuthUI(user) {
+  els.loginBtn.hidden = !!user;
+  els.authStatus.hidden = !user;
+  if (user) els.authName.textContent = fallbackName(user);
+  if (!user) els.searchPanel.hidden = true;
+}
+
 // ---------- Event wiring ----------
+els.sectionTabs.addEventListener("click", e => {
+  const btn = e.target.closest(".section-tab");
+  if (!btn) return;
+  if (btn.dataset.section === "mine") showMyDrawer();
+  else showFriends();
+});
+els.backToFriends.addEventListener("click", showFriends);
+
 els.tabs.addEventListener("click", e => {
   const btn = e.target.closest(".tab");
   if (!btn) return;
@@ -245,37 +405,46 @@ els.grid.addEventListener("click", e => {
 });
 
 els.loginBtn.addEventListener("click", () => {
+  setAuthMode("signin");
   els.loginModal.hidden = false;
-  els.loginError.hidden = true;
   els.loginEmail.focus();
 });
 els.loginCancel.addEventListener("click", () => { els.loginModal.hidden = true; });
 els.loginModal.addEventListener("click", e => { if (e.target === els.loginModal) els.loginModal.hidden = true; });
+els.authModeToggle.addEventListener("click", () => setAuthMode(authMode === "signup" ? "signin" : "signup"));
 
 els.loginForm.addEventListener("submit", async e => {
   e.preventDefault();
   els.loginError.hidden = true;
+  const email = els.loginEmail.value;
+  const password = els.loginPassword.value;
   try {
-    await signInWithEmailAndPassword(auth, els.loginEmail.value, els.loginPassword.value);
+    if (authMode === "signup") {
+      const name = els.signupName.value.trim();
+      if (!name) {
+        els.loginError.textContent = "Please enter a display name.";
+        els.loginError.hidden = false;
+        return;
+      }
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(cred.user, { displayName: name });
+      try {
+        await ensureProfile(cred.user, name);
+      } catch (profileErr) {
+        showStatus("Signed up, but couldn't save your profile — friends may not see your name yet.", true);
+      }
+    } else {
+      await signInWithEmailAndPassword(auth, email, password);
+    }
     els.loginModal.hidden = true;
     els.loginForm.reset();
   } catch (err) {
-    els.loginError.textContent = "Couldn't sign in — check your email and password.";
+    els.loginError.textContent = authErrorMessage(err);
     els.loginError.hidden = false;
   }
 });
 
 els.logoutBtn.addEventListener("click", () => signOut(auth));
-
-function updateAuthUI(user) {
-  loggedIn = !!user;
-  els.loginBtn.hidden = loggedIn;
-  els.authStatus.hidden = !loggedIn;
-  els.addBtn.hidden = !loggedIn;
-  if (loggedIn) els.authEmail.textContent = user.email;
-  if (!loggedIn) els.searchPanel.hidden = true;
-  renderGrid();
-}
 
 // ---------- Boot ----------
 function boot() {
@@ -288,8 +457,15 @@ function boot() {
   const app = initializeApp(CONFIG.FIREBASE_CONFIG);
   db = getFirestore(app);
   auth = getAuth(app);
-  onAuthStateChanged(auth, updateAuthUI);
-  startListening();
+
+  onAuthStateChanged(auth, async user => {
+    currentUser = user;
+    updateAuthUI(user);
+    if (user) { try { await ensureProfile(user); } catch (e) { /* profile is best-effort; drawer still works */ } }
+    if (section === "mine") showMyDrawer();
+  });
+
+  showMyDrawer();
 }
 
 boot();

@@ -14,9 +14,9 @@
         <p class="sub"><span id="card-count">0</span> CARDS ON FILE</p>
       </div>
       <div class="auth-box">
-        <button id="login-btn" class="link-btn">Staff Login</button>
+        <button id="login-btn" class="link-btn">Sign In</button>
         <div id="auth-status" class="auth-status" hidden>
-          <span id="auth-email"></span>
+          <span id="auth-name"></span>
           <button id="logout-btn" class="link-btn">Log out</button>
         </div>
       </div>
@@ -24,37 +24,58 @@
 
     <div id="config-warning" class="config-warning" hidden></div>
 
-    <nav class="tabs" id="status-tabs">
-      <button class="tab active" data-filter="all">ALL</button>
-      <button class="tab" data-filter="to-watch">TO WATCH</button>
-      <button class="tab" data-filter="watching">WATCHING</button>
-      <button class="tab" data-filter="watched">WATCHED</button>
-      <button id="add-btn" class="add-btn" hidden>+ FILE NEW CARD</button>
+    <nav class="section-tabs" id="section-tabs">
+      <button class="section-tab active" data-section="mine">MY DRAWER</button>
+      <button class="section-tab" data-section="friends">FRIENDS</button>
     </nav>
 
-    <div id="search-panel" class="search-panel" hidden>
-      <input type="text" id="search-input" placeholder="Type a movie title…" autocomplete="off">
-      <div id="search-results" class="search-results"></div>
-      <button id="search-close" class="link-btn">Close</button>
+    <p id="viewing-banner" class="viewing-banner" hidden>
+      Viewing <strong id="viewing-name"></strong>'s drawer —
+      <button id="back-to-friends" class="link-btn">Back to Friends</button>
+    </p>
+
+    <div id="signed-out-msg" class="empty-msg" hidden>Sign in (or create an account) to start your own drawer.</div>
+
+    <div id="friends-section" hidden>
+      <div id="friends-list" class="friends-list"></div>
+      <p id="friends-empty" class="empty-msg" hidden>No one's signed up yet — be the first.</p>
     </div>
 
-    <p id="status-msg" class="status-msg" hidden></p>
+    <div id="drawer-section">
+      <nav class="tabs" id="status-tabs">
+        <button class="tab active" data-filter="all">ALL</button>
+        <button class="tab" data-filter="to-watch">TO WATCH</button>
+        <button class="tab" data-filter="watching">WATCHING</button>
+        <button class="tab" data-filter="watched">WATCHED</button>
+        <button id="add-btn" class="add-btn" hidden>+ FILE NEW CARD</button>
+      </nav>
 
-    <div id="grid" class="grid"></div>
-    <p id="empty-msg" class="empty-msg" hidden>No cards filed yet.</p>
+      <div id="search-panel" class="search-panel" hidden>
+        <input type="text" id="search-input" placeholder="Type a movie title…" autocomplete="off">
+        <div id="search-results" class="search-results"></div>
+        <button id="search-close" class="link-btn">Close</button>
+      </div>
+
+      <p id="status-msg" class="status-msg" hidden></p>
+
+      <div id="grid" class="grid"></div>
+      <p id="empty-msg" class="empty-msg" hidden>No cards filed yet.</p>
+    </div>
   </div>
 
   <div id="login-modal" class="modal" hidden>
     <div class="modal-box">
-      <h2>Staff Login</h2>
+      <h2 id="auth-modal-title">Sign In</h2>
       <form id="login-form">
+        <label id="name-field" hidden>Display name<input type="text" id="signup-name" autocomplete="name"></label>
         <label>Email<input type="email" id="login-email" required autocomplete="username"></label>
         <label>Password<input type="password" id="login-password" required autocomplete="current-password"></label>
         <p id="login-error" class="error-text" hidden></p>
         <div class="modal-actions">
           <button type="button" id="login-cancel" class="link-btn">Cancel</button>
-          <button type="submit" class="primary-btn">Sign in</button>
+          <button type="submit" class="primary-btn" id="auth-submit-btn">Sign in</button>
         </div>
+        <p class="modal-toggle"><button type="button" id="auth-mode-toggle" class="link-btn">New here? Create an account</button></p>
       </form>
     </div>
   </div>
