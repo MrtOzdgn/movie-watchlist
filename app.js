@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
-  getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, setDoc, getDoc, getDocs,
+  getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, deleteField, setDoc, getDoc, getDocs,
   onSnapshot, query, orderBy, where, or, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import {
@@ -477,15 +477,22 @@ async function runSearch(qText) {
 }
 
 // ---------- Auth ----------
+// Note: profiles are publicly readable (Commonwealth needs that), so this
+// deliberately never writes `email` into them. Any legacy doc that still has
+// one gets it stripped out here the next time that person signs in.
 async function ensureProfile(user, overrides) {
   const ref = doc(db, "profiles", user.uid);
   if (overrides) {
-    await setDoc(ref, { ...overrides, email: user.email, updatedAt: serverTimestamp() }, { merge: true });
+    await setDoc(ref, { ...overrides, updatedAt: serverTimestamp() }, { merge: true });
     return;
   }
   const snap = await getDoc(ref);
   if (!snap.exists()) {
-    await setDoc(ref, { displayName: fallbackName(user), email: user.email, updatedAt: serverTimestamp() }, { merge: true });
+    await setDoc(ref, { displayName: fallbackName(user), updatedAt: serverTimestamp() }, { merge: true });
+    return;
+  }
+  if (snap.data().email !== undefined) {
+    await updateDoc(ref, { email: deleteField() });
   }
 }
 
