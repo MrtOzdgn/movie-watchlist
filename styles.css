@@ -212,23 +212,32 @@ body{
 .card-delete:hover{ color:var(--error); }
 .card-delete:focus-visible{ opacity:1; outline:2px solid var(--teal); }
 
-.modal{
-  position:fixed; inset:0; background:rgba(35,36,31,0.5); display:flex; align-items:center; justify-content:center;
-  padding:20px; z-index:10;
+.boot-loading{
+  display:flex; align-items:center; justify-content:center; min-height:100vh;
+  font-size:0.85rem; color:var(--dim); letter-spacing:0.03em;
+  font-family:'Courier Card', ui-monospace, "SF Mono", Menlo, monospace;
 }
-.modal-box{
-  background:var(--card); border:1px solid var(--ink); padding:26px 24px; width:100%; max-width:340px;
+
+.auth-gate{
+  display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px;
+  background:var(--bg); font-family:'Courier Card', ui-monospace, "SF Mono", Menlo, monospace; color:var(--ink);
+}
+.auth-gate-box{
+  background:var(--card); border:1px solid var(--ink); padding:32px 28px; width:100%; max-width:360px;
   box-shadow:4px 4px 0 rgba(35,36,31,0.18);
 }
-.modal-box h2{ margin:0 0 16px; font-size:1.1rem; }
-.modal-box form{ display:flex; flex-direction:column; gap:14px; }
-.modal-box label{ display:flex; flex-direction:column; gap:6px; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--dim); }
-.modal-box input{ font:inherit; font-size:0.9rem; padding:8px 10px; border:1px solid var(--line); background:#fff; color:var(--ink); text-transform:none; letter-spacing:normal; }
-.modal-box input:focus-visible{ outline:2px solid var(--teal); outline-offset:1px; }
-.modal-actions{ display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
+.auth-gate-box h1{ font-size:1.1rem; margin:0 0 6px; letter-spacing:-0.01em; text-wrap:balance; }
+.auth-gate-box .sub{ font-size:0.78rem; color:var(--dim); margin:0 0 22px; }
+.auth-gate-box h2{ margin:0 0 16px; font-size:1rem; }
+.auth-gate-box form{ display:flex; flex-direction:column; gap:14px; }
+.auth-gate-box label{ display:flex; flex-direction:column; gap:6px; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--dim); }
+.auth-gate-box input{ font:inherit; font-size:0.9rem; padding:8px 10px; border:1px solid var(--line); background:#fff; color:var(--ink); text-transform:none; letter-spacing:normal; }
+.auth-gate-box input:focus-visible{ outline:2px solid var(--teal); outline-offset:1px; }
+.modal-actions{ margin-top:4px; }
 .primary-btn{
   font:inherit; font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
-  background:var(--ink); border:1px solid var(--ink); color:var(--card); padding:8px 16px; cursor:pointer;
+  background:var(--ink); border:1px solid var(--ink); color:var(--card); padding:10px 16px; cursor:pointer;
+  width:100%;
 }
 .primary-btn:hover{ background:#3a3b33; }
 .error-text{ color:var(--error); font-size:0.75rem; margin:0; }

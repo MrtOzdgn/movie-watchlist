@@ -2,6 +2,22 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isValidMovie(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 300
+        && data.genre is string && data.genre.size() <= 60
+        && data.year is string && data.year.size() <= 10
+        && data.status in ['to-watch', 'watched']
+        && data.rating is number && data.rating >= 0 && data.rating <= 5
+        && (!('director' in data) || data.director == null || (data.director is string && data.director.size() <= 200))
+        && (!('comment' in data) || data.comment == null || (data.comment is string && data.comment.size() <= 2000))
+        && (!('posterUrl' in data) || data.posterUrl == null || (data.posterUrl is string && data.posterUrl.size() <= 500));
+    }
+
+    function isValidProfile(data) {
+      return (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100))
+        && (!('username' in data) || (data.username is string && data.username.size() <= 20));
+    }
+
     match /usernames/{username} {
       allow read: if true;
       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
@@ -10,7 +26,9 @@ service cloud.firestore {
 
     match /profiles/{uid} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid && isValidProfile(request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == uid && isValidProfile(request.resource.data);
+      allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
     match /friendships/{pairId} {
@@ -42,7 +60,9 @@ service cloud.firestore {
           get(/databases/$(database)/documents/friendships/$(request.auth.uid < uid ? request.auth.uid + '_' + uid : uid + '_' + request.auth.uid)).data.status == 'accepted'
         )
       );
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid && isValidMovie(request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == uid && isValidMovie(request.resource.data);
+      allow delete: if request.auth != null && request.auth.uid == uid;
     }
   }
 }

@@ -23,7 +23,9 @@ const STATUS_LABEL = { "to-watch":"To Watch", "watched":"Watched" };
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
 const els = {
-  loginBtn: document.getElementById("login-btn"),
+  bootLoading: document.getElementById("boot-loading"),
+  authGate: document.getElementById("auth-gate"),
+  appShell: document.getElementById("app-shell"),
   authStatus: document.getElementById("auth-status"),
   authName: document.getElementById("auth-name"),
   logoutBtn: document.getElementById("logout-btn"),
@@ -35,14 +37,12 @@ const els = {
   friendsSection: document.getElementById("friends-section"),
   friendsList: document.getElementById("friends-list"),
   friendsEmpty: document.getElementById("friends-empty"),
-  friendsSignedOut: document.getElementById("friends-signed-out"),
   commonwealthSection: document.getElementById("commonwealth-section"),
   commonwealthList: document.getElementById("commonwealth-list"),
   commonwealthEmpty: document.getElementById("commonwealth-empty"),
   viewingBanner: document.getElementById("viewing-banner"),
   viewingName: document.getElementById("viewing-name"),
   backToFriends: document.getElementById("back-to-friends"),
-  signedOutMsg: document.getElementById("signed-out-msg"),
 
   tabs: document.getElementById("status-tabs"),
   addBtn: document.getElementById("add-btn"),
@@ -55,7 +55,6 @@ const els = {
   emptyMsg: document.getElementById("empty-msg"),
   cardCount: document.getElementById("card-count"),
 
-  loginModal: document.getElementById("login-modal"),
   authModalTitle: document.getElementById("auth-modal-title"),
   authSubmitBtn: document.getElementById("auth-submit-btn"),
   authModeToggle: document.getElementById("auth-mode-toggle"),
@@ -67,7 +66,6 @@ const els = {
   loginEmail: document.getElementById("login-email"),
   loginPassword: document.getElementById("login-password"),
   loginError: document.getElementById("login-error"),
-  loginCancel: document.getElementById("login-cancel"),
 };
 
 let movies = [];
@@ -111,10 +109,16 @@ function starsMarkup(rating) {
   return s;
 }
 
+// Escapes for both text-node AND attribute-value contexts (quotes included) —
+// this is used inside src="..." and data-id="..." attributes, not just text,
+// so it must not stop at the characters that are only dangerous in text nodes.
 function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str ?? "";
-  return div.innerHTML;
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function fallbackName(user) {
@@ -138,13 +142,14 @@ function renderGrid() {
   const editable = !viewingReadOnly;
   els.grid.innerHTML = filtered.map((m, i) => {
     const cardNo = String(i + 1).padStart(3, "0");
+    const safeId = escapeHtml(m.id);
     const posterMarkup = m.posterUrl
-      ? `<img class="card-poster" src="${m.posterUrl}" alt="${escapeHtml(m.title)} poster">`
+      ? `<img class="card-poster" src="${escapeHtml(m.posterUrl)}" alt="${escapeHtml(m.title)} poster">`
       : `<div class="card-poster-blank">NO STILL<br>ON FILE</div>`;
-    const metaLine = `${m.year || "—"}${m.director ? ` · Dir. ${escapeHtml(m.director)}` : ""}`;
+    const metaLine = `${escapeHtml(m.year || "—")}${m.director ? ` · Dir. ${escapeHtml(m.director)}` : ""}`;
     return `
-      <div class="card" data-id="${m.id}">
-        ${editable ? `<button class="card-delete" data-action="delete" data-id="${m.id}">Withdraw</button>` : ""}
+      <div class="card" data-id="${safeId}">
+        ${editable ? `<button class="card-delete" data-action="delete" data-id="${safeId}">Withdraw</button>` : ""}
         <div class="card-tab" style="background:${colorForGenre(m.genre)};">${escapeHtml(m.genre)}</div>
         <div class="card-body">
           ${posterMarkup}
@@ -155,11 +160,11 @@ function renderGrid() {
           </div>
         </div>
         ${editable
-          ? `<textarea class="card-comment-input" data-action="comment" data-id="${m.id}" rows="1" placeholder="Add a note…">${escapeHtml(m.comment || "")}</textarea>`
+          ? `<textarea class="card-comment-input" data-action="comment" data-id="${safeId}" rows="1" placeholder="Add a note…">${escapeHtml(m.comment || "")}</textarea>`
           : (m.comment ? `<div class="card-comment">${escapeHtml(m.comment)}</div>` : "")}
         <div class="card-foot">
-          <button class="stars ${editable ? "editable" : ""}" data-action="rate" data-id="${m.id}" ${editable ? "" : "disabled"}>${starsMarkup(m.rating)}</button>
-          <button class="stamp ${m.status} ${editable ? "editable" : ""}" data-action="cycle-status" data-id="${m.id}" ${editable ? "" : "disabled"}>${STATUS_LABEL[m.status]}</button>
+          <button class="stars ${editable ? "editable" : ""}" data-action="rate" data-id="${safeId}" ${editable ? "" : "disabled"}>${starsMarkup(m.rating)}</button>
+          <button class="stamp ${m.status} ${editable ? "editable" : ""}" data-action="cycle-status" data-id="${safeId}" ${editable ? "" : "disabled"}>${escapeHtml(STATUS_LABEL[m.status] || m.status || "")}</button>
         </div>
       </div>
     `;
@@ -193,21 +198,15 @@ function hideAllSections() {
   els.viewingBanner.hidden = true;
   els.friendsSection.hidden = true;
   els.commonwealthSection.hidden = true;
-  els.signedOutMsg.hidden = true;
   els.drawerSection.hidden = true;
+  showStatus("", false);
 }
 
 function showMyDrawer() {
   section = "mine";
   setSectionTabActive("mine");
   hideAllSections();
-
-  if (!currentUser) {
-    els.signedOutMsg.hidden = false;
-    if (unsubscribeMovies) { unsubscribeMovies(); unsubscribeMovies = null; }
-    movies = [];
-    return;
-  }
+  if (!currentUser) return;
   els.drawerSection.hidden = false;
   viewingUid = currentUser.uid;
   viewingReadOnly = false;
@@ -238,10 +237,8 @@ function renderFriendsSection() {
   if (!currentUser) {
     els.friendsList.innerHTML = "";
     els.friendsEmpty.hidden = true;
-    els.friendsSignedOut.hidden = false;
     return;
   }
-  els.friendsSignedOut.hidden = true;
   const uids = acceptedFriendUids();
   els.friendsEmpty.hidden = uids.length !== 0;
   els.friendsList.innerHTML = uids.map(uid => {
@@ -519,10 +516,16 @@ function setAuthMode(mode) {
 }
 
 function updateAuthUI(user) {
-  els.loginBtn.hidden = !!user;
-  els.authStatus.hidden = !user;
-  if (user) els.authName.textContent = fallbackName(user);
-  if (!user) els.searchPanel.hidden = true;
+  els.bootLoading.hidden = true;
+  els.authGate.hidden = !!user;
+  els.appShell.hidden = !user;
+  if (user) {
+    els.authName.textContent = fallbackName(user);
+  } else {
+    els.searchPanel.hidden = true;
+    setAuthMode("signin");
+    els.loginForm.reset();
+  }
 }
 
 // ---------- Event wiring ----------
@@ -582,13 +585,6 @@ els.grid.addEventListener("focusout", e => {
   saveComment(ta.dataset.id, ta.value.trim());
 });
 
-els.loginBtn.addEventListener("click", () => {
-  setAuthMode("signin");
-  els.loginModal.hidden = false;
-  els.loginEmail.focus();
-});
-els.loginCancel.addEventListener("click", () => { els.loginModal.hidden = true; });
-els.loginModal.addEventListener("click", e => { if (e.target === els.loginModal) els.loginModal.hidden = true; });
 els.authModeToggle.addEventListener("click", () => setAuthMode(authMode === "signup" ? "signin" : "signup"));
 
 els.loginForm.addEventListener("submit", async e => {
@@ -630,8 +626,6 @@ els.loginForm.addEventListener("submit", async e => {
     } else {
       await signInWithEmailAndPassword(auth, email, password);
     }
-    els.loginModal.hidden = true;
-    els.loginForm.reset();
   } catch (err) {
     els.loginError.textContent = authErrorMessage(err);
     els.loginError.hidden = false;
@@ -643,6 +637,7 @@ els.logoutBtn.addEventListener("click", () => signOut(auth));
 // ---------- Boot ----------
 function boot() {
   if (!isConfigured()) {
+    els.bootLoading.hidden = true;
     els.configWarning.hidden = false;
     els.configWarning.textContent =
       "Firebase isn't configured yet. Open config.js and paste in your Firebase project settings to make this drawer live.";
@@ -663,8 +658,6 @@ function boot() {
     else if (section === "friends") renderFriendsSection();
     else if (section === "commonwealth") renderCommonwealth();
   });
-
-  showMyDrawer();
 }
 
 boot();
