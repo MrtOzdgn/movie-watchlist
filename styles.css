@@ -65,6 +65,11 @@ body{
 .section-tab.active{ color:var(--ink); border-bottom-color:var(--rust); }
 .section-tab:focus-visible{ outline:2px solid var(--teal); outline-offset:2px; }
 
+.badge{
+  display:inline-block; min-width:16px; height:16px; line-height:16px; text-align:center;
+  background:var(--rust); color:#fff; border-radius:50%; font-size:0.6rem; margin-left:6px; padding:0 3px;
+}
+
 .viewing-banner{ font-size:0.8rem; color:var(--dim); margin:14px 0 0; }
 .viewing-banner strong{ color:var(--ink); }
 
@@ -79,6 +84,25 @@ body{
 .friend-count{ font-size:0.7rem; color:var(--dim); margin-top:4px; }
 
 .modal-toggle{ text-align:center; margin:2px 0 0; }
+
+.member-card{
+  background:var(--card); border:1px solid var(--ink); padding:14px 16px;
+  box-shadow:2px 2px 0 rgba(35,36,31,0.1); display:flex; justify-content:space-between; align-items:center; gap:12px;
+}
+.member-info{ min-width:0; }
+.member-name{ font-weight:700; font-size:0.95rem; }
+.member-username{ font-size:0.72rem; color:var(--dim); margin-top:2px; }
+.member-action{
+  font:inherit; font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+  padding:6px 10px; cursor:pointer; white-space:nowrap; flex-shrink:0;
+  background:var(--teal); border:1px solid var(--teal); color:#fff;
+}
+.member-action:hover{ background:#245a51; }
+.member-action:focus-visible{ outline:2px solid var(--ink); outline-offset:2px; }
+.member-action.pending{ background:transparent; border-color:var(--dim); color:var(--dim); cursor:default; }
+.member-action.accept{ background:var(--rust); border-color:var(--rust); }
+.member-action.accept:hover{ background:#a3381f; }
+.member-action.is-friend{ background:transparent; border-color:var(--teal); color:var(--teal); cursor:default; }
 
 .tabs{ display:flex; gap:10px; align-items:center; padding:20px 0 8px; flex-wrap:wrap; }
 .tab{
@@ -155,7 +179,7 @@ body{
   display:flex; justify-content:space-between; align-items:center;
   border-top:1px dashed var(--line); margin-top:12px; padding-top:10px;
 }
-.stars{ font-size:0.85rem; letter-spacing:2px; background:none; border:none; padding:0; font-family:inherit; color:var(--ink); }
+.stars{ font-size:1.4rem; letter-spacing:3px; background:none; border:none; padding:0; font-family:inherit; color:var(--ink); line-height:1; }
 .stars.editable{ cursor:pointer; }
 .stars .off{ color:var(--line); }
 
@@ -165,7 +189,6 @@ body{
   background:none; font-family:inherit;
 }
 .stamp.watched{ border-color:var(--teal); color:var(--teal); }
-.stamp.watching{ border-color:var(--rust); color:var(--rust); }
 .stamp.editable{ cursor:pointer; }
 .stamp.editable:hover{ background:rgba(0,0,0,0.04); }
 

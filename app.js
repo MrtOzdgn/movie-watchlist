@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
   getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, setDoc, getDoc, getDocs,
-  onSnapshot, query, orderBy, serverTimestamp
+  onSnapshot, query, orderBy, where, or, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile,
@@ -18,8 +18,9 @@ const GENRE_MAP = {
   878:"Science Fiction", 10770:"TV Movie", 53:"Thriller", 10752:"War", 37:"Western"
 };
 const GENRE_PALETTE = ["#2c6e63", "#c4472b", "#a9821f", "#6b4e71", "#35607a", "#6b7a35"];
-const STATUS_ORDER = ["to-watch", "watching", "watched"];
-const STATUS_LABEL = { "to-watch":"To Watch", "watching":"Watching", "watched":"Watched" };
+const STATUS_ORDER = ["to-watch", "watched"];
+const STATUS_LABEL = { "to-watch":"To Watch", "watched":"Watched" };
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
 const els = {
   loginBtn: document.getElementById("login-btn"),
@@ -29,10 +30,15 @@ const els = {
   configWarning: document.getElementById("config-warning"),
 
   sectionTabs: document.getElementById("section-tabs"),
+  requestBadge: document.getElementById("request-badge"),
   drawerSection: document.getElementById("drawer-section"),
   friendsSection: document.getElementById("friends-section"),
   friendsList: document.getElementById("friends-list"),
   friendsEmpty: document.getElementById("friends-empty"),
+  friendsSignedOut: document.getElementById("friends-signed-out"),
+  commonwealthSection: document.getElementById("commonwealth-section"),
+  commonwealthList: document.getElementById("commonwealth-list"),
+  commonwealthEmpty: document.getElementById("commonwealth-empty"),
   viewingBanner: document.getElementById("viewing-banner"),
   viewingName: document.getElementById("viewing-name"),
   backToFriends: document.getElementById("back-to-friends"),
@@ -55,6 +61,8 @@ const els = {
   authModeToggle: document.getElementById("auth-mode-toggle"),
   nameField: document.getElementById("name-field"),
   signupName: document.getElementById("signup-name"),
+  usernameField: document.getElementById("username-field"),
+  signupUsername: document.getElementById("signup-username"),
   loginForm: document.getElementById("login-form"),
   loginEmail: document.getElementById("login-email"),
   loginPassword: document.getElementById("login-password"),
@@ -65,11 +73,15 @@ const els = {
 let movies = [];
 let currentFilter = "all";
 let currentUser = null;
-let section = "mine"; // 'mine' | 'friends' | 'friend'
+let section = "mine"; // 'mine' | 'friends' | 'friend' | 'commonwealth'
 let viewingUid = null;
 let viewingReadOnly = true;
 let authMode = "signin";
 let unsubscribeMovies = null;
+let unsubscribeFriendships = null;
+let unsubscribeProfiles = null;
+let profiles = []; // all profiles: {uid, username, displayName, email}
+let friendships = []; // all friendship docs involving currentUser
 let db = null;
 let auth = null;
 
@@ -109,7 +121,11 @@ function fallbackName(user) {
   return user.displayName || (user.email ? user.email.split("@")[0] : "Member");
 }
 
-// ---------- Rendering ----------
+function pairId(a, b) { return a < b ? `${a}_${b}` : `${b}_${a}`; }
+
+function profileFor(uid) { return profiles.find(p => p.uid === uid); }
+
+// ---------- Drawer rendering ----------
 function renderGrid() {
   const filtered = currentFilter === "all" ? movies : movies.filter(m => m.status === currentFilter);
   els.emptyMsg.hidden = filtered.length !== 0;
@@ -165,69 +181,195 @@ function setSectionTabActive(name) {
   });
 }
 
+function hideAllSections() {
+  els.viewingBanner.hidden = true;
+  els.friendsSection.hidden = true;
+  els.commonwealthSection.hidden = true;
+  els.signedOutMsg.hidden = true;
+  els.drawerSection.hidden = true;
+}
+
 function showMyDrawer() {
   section = "mine";
   setSectionTabActive("mine");
-  els.viewingBanner.hidden = true;
-  els.friendsSection.hidden = true;
+  hideAllSections();
 
   if (!currentUser) {
-    els.drawerSection.hidden = true;
     els.signedOutMsg.hidden = false;
     if (unsubscribeMovies) { unsubscribeMovies(); unsubscribeMovies = null; }
     movies = [];
     return;
   }
-  els.signedOutMsg.hidden = true;
   els.drawerSection.hidden = false;
   viewingUid = currentUser.uid;
   viewingReadOnly = false;
   watchMovies(viewingUid);
 }
 
-async function loadFriendsList() {
-  els.friendsList.innerHTML = "";
-  els.friendsEmpty.hidden = true;
-  try {
-    const snap = await getDocs(collection(db, "profiles"));
-    const others = snap.docs.map(d => ({ uid: d.id, ...d.data() }))
-      .filter(p => !currentUser || p.uid !== currentUser.uid);
-    if (!others.length) { els.friendsEmpty.hidden = false; return; }
-    els.friendsList.innerHTML = others.map(p => `
-      <button class="friend-card" data-uid="${p.uid}">
-        <div class="friend-name">${escapeHtml(p.displayName || "Unnamed")}</div>
-        <div class="friend-count">View drawer →</div>
-      </button>
-    `).join("");
-    els.friendsList.querySelectorAll(".friend-card").forEach(btn => {
-      const p = others.find(x => x.uid === btn.dataset.uid);
-      btn.addEventListener("click", () => viewFriendDrawer(p.uid, p.displayName || "Unnamed"));
-    });
-  } catch (e) {
-    showStatus("Couldn't load friends: " + e.message, true);
+// ---------- Friends (mutual, accepted only) ----------
+function acceptedFriendUids() {
+  if (!currentUser) return [];
+  return friendships
+    .filter(f => f.status === "accepted")
+    .map(f => (f.uidA === currentUser.uid ? f.uidB : f.uidA));
+}
+
+function pendingIncoming() {
+  if (!currentUser) return [];
+  return friendships.filter(f => f.status === "pending" && f.requestedBy !== currentUser.uid);
+}
+
+function relationshipWith(theirUid) {
+  const f = friendships.find(x => x.uidA === theirUid || x.uidB === theirUid);
+  if (!f) return "none";
+  if (f.status === "accepted") return "friends";
+  return f.requestedBy === currentUser.uid ? "requested" : "incoming";
+}
+
+function renderFriendsSection() {
+  if (!currentUser) {
+    els.friendsList.innerHTML = "";
+    els.friendsEmpty.hidden = true;
+    els.friendsSignedOut.hidden = false;
+    return;
   }
+  els.friendsSignedOut.hidden = true;
+  const uids = acceptedFriendUids();
+  els.friendsEmpty.hidden = uids.length !== 0;
+  els.friendsList.innerHTML = uids.map(uid => {
+    const p = profileFor(uid);
+    const name = p ? p.displayName : "Member";
+    const username = p ? p.username : "";
+    return `
+      <button class="friend-card" data-uid="${uid}">
+        <div class="friend-name">${escapeHtml(name)}</div>
+        <div class="friend-count">${username ? "@" + escapeHtml(username) + " · " : ""}View drawer →</div>
+      </button>
+    `;
+  }).join("");
+  els.friendsList.querySelectorAll(".friend-card").forEach(btn => {
+    const p = profileFor(btn.dataset.uid);
+    btn.addEventListener("click", () => viewFriendDrawer(btn.dataset.uid, p ? p.displayName : "Member"));
+  });
 }
 
 function showFriends() {
   section = "friends";
   setSectionTabActive("friends");
-  els.drawerSection.hidden = true;
-  els.viewingBanner.hidden = true;
-  els.signedOutMsg.hidden = true;
+  hideAllSections();
   els.friendsSection.hidden = false;
-  loadFriendsList();
+  renderFriendsSection();
 }
 
 function viewFriendDrawer(uid, name) {
   section = "friend";
-  els.friendsSection.hidden = true;
-  els.signedOutMsg.hidden = true;
+  hideAllSections();
   els.drawerSection.hidden = false;
   els.viewingBanner.hidden = false;
   els.viewingName.textContent = name;
   viewingUid = uid;
   viewingReadOnly = true;
   watchMovies(uid);
+}
+
+// ---------- Commonwealth (everyone, with add-friend actions) ----------
+function renderCommonwealth() {
+  const others = profiles.filter(p => !currentUser || p.uid !== currentUser.uid);
+  els.commonwealthEmpty.hidden = others.length !== 0;
+  els.commonwealthList.innerHTML = others.map(p => {
+    const rel = currentUser ? relationshipWith(p.uid) : "none";
+    let actionHtml = "";
+    if (currentUser) {
+      if (rel === "none") actionHtml = `<button class="member-action" data-action="add" data-uid="${p.uid}">Add Friend</button>`;
+      else if (rel === "requested") actionHtml = `<button class="member-action pending" disabled>Requested</button>`;
+      else if (rel === "incoming") actionHtml = `<button class="member-action accept" data-action="accept" data-uid="${p.uid}">Accept Request</button>`;
+      else if (rel === "friends") actionHtml = `<button class="member-action is-friend" data-action="view" data-uid="${p.uid}" data-name="${escapeHtml(p.displayName)}">Friends · View</button>`;
+    }
+    return `
+      <div class="member-card">
+        <div class="member-info">
+          <div class="friend-name">${escapeHtml(p.displayName || "Unnamed")}</div>
+          <div class="member-username">${p.username ? "@" + escapeHtml(p.username) : ""}</div>
+        </div>
+        ${actionHtml}
+      </div>
+    `;
+  }).join("");
+
+  els.commonwealthList.querySelectorAll("[data-action]").forEach(btn => {
+    const uid = btn.dataset.uid;
+    if (btn.dataset.action === "add") btn.addEventListener("click", () => sendFriendRequest(uid));
+    if (btn.dataset.action === "accept") btn.addEventListener("click", () => acceptFriendRequest(uid));
+    if (btn.dataset.action === "view") btn.addEventListener("click", () => viewFriendDrawer(uid, btn.dataset.name));
+  });
+}
+
+function showCommonwealth() {
+  section = "commonwealth";
+  setSectionTabActive("commonwealth");
+  hideAllSections();
+  els.commonwealthSection.hidden = false;
+  renderCommonwealth();
+}
+
+async function sendFriendRequest(theirUid) {
+  if (!currentUser) return;
+  const id = pairId(currentUser.uid, theirUid);
+  try {
+    await setDoc(doc(db, "friendships", id), {
+      uidA: currentUser.uid < theirUid ? currentUser.uid : theirUid,
+      uidB: currentUser.uid < theirUid ? theirUid : currentUser.uid,
+      requestedBy: currentUser.uid,
+      status: "pending",
+      createdAt: serverTimestamp(),
+    });
+    showStatus("Friend request sent.", false);
+  } catch (e) {
+    showStatus("Couldn't send request: " + e.message, true);
+  }
+}
+
+async function acceptFriendRequest(theirUid) {
+  if (!currentUser) return;
+  const id = pairId(currentUser.uid, theirUid);
+  try {
+    await updateDoc(doc(db, "friendships", id), { status: "accepted" });
+    showStatus("You're now friends.", false);
+  } catch (e) {
+    showStatus("Couldn't accept request: " + e.message, true);
+  }
+}
+
+function updateRequestBadge() {
+  const count = pendingIncoming().length;
+  els.requestBadge.hidden = count === 0;
+  els.requestBadge.textContent = String(count);
+}
+
+function watchFriendships() {
+  if (unsubscribeFriendships) { unsubscribeFriendships(); unsubscribeFriendships = null; }
+  if (!currentUser) { friendships = []; updateRequestBadge(); return; }
+  const q = query(collection(db, "friendships"),
+    or(where("uidA", "==", currentUser.uid), where("uidB", "==", currentUser.uid)));
+  unsubscribeFriendships = onSnapshot(q, snap => {
+    friendships = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    updateRequestBadge();
+    if (section === "friends") renderFriendsSection();
+    if (section === "commonwealth") renderCommonwealth();
+  }, err => {
+    showStatus("Couldn't load friend requests: " + err.message, true);
+  });
+}
+
+function watchProfiles() {
+  if (unsubscribeProfiles) { unsubscribeProfiles(); unsubscribeProfiles = null; }
+  unsubscribeProfiles = onSnapshot(collection(db, "profiles"), snap => {
+    profiles = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+    if (section === "commonwealth") renderCommonwealth();
+    if (section === "friends") renderFriendsSection();
+  }, err => {
+    showStatus("Couldn't load members: " + err.message, true);
+  });
 }
 
 // ---------- Firestore writes (always on the signed-in user's own drawer) ----------
@@ -320,10 +462,10 @@ async function runSearch(qText) {
 }
 
 // ---------- Auth ----------
-async function ensureProfile(user, displayNameOverride) {
+async function ensureProfile(user, overrides) {
   const ref = doc(db, "profiles", user.uid);
-  if (displayNameOverride) {
-    await setDoc(ref, { displayName: displayNameOverride, email: user.email, updatedAt: serverTimestamp() }, { merge: true });
+  if (overrides) {
+    await setDoc(ref, { ...overrides, email: user.email, updatedAt: serverTimestamp() }, { merge: true });
     return;
   }
   const snap = await getDoc(ref);
@@ -347,6 +489,7 @@ function authErrorMessage(err) {
 function setAuthMode(mode) {
   authMode = mode;
   els.nameField.hidden = mode !== "signup";
+  els.usernameField.hidden = mode !== "signup";
   els.authModalTitle.textContent = mode === "signup" ? "Create Account" : "Sign In";
   els.authSubmitBtn.textContent = mode === "signup" ? "Create Account" : "Sign In";
   els.authModeToggle.textContent = mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account";
@@ -365,7 +508,8 @@ els.sectionTabs.addEventListener("click", e => {
   const btn = e.target.closest(".section-tab");
   if (!btn) return;
   if (btn.dataset.section === "mine") showMyDrawer();
-  else showFriends();
+  else if (btn.dataset.section === "friends") showFriends();
+  else showCommonwealth();
 });
 els.backToFriends.addEventListener("click", showFriends);
 
@@ -421,17 +565,33 @@ els.loginForm.addEventListener("submit", async e => {
   try {
     if (authMode === "signup") {
       const name = els.signupName.value.trim();
+      const username = els.signupUsername.value.trim().toLowerCase();
       if (!name) {
         els.loginError.textContent = "Please enter a display name.";
         els.loginError.hidden = false;
         return;
       }
+      if (!USERNAME_RE.test(username)) {
+        els.loginError.textContent = "Username must be 3-20 characters: lowercase letters, numbers, or _.";
+        els.loginError.hidden = false;
+        return;
+      }
+      const usernameRef = doc(db, "usernames", username);
+      const usernameSnap = await getDoc(usernameRef);
+      if (usernameSnap.exists()) {
+        els.loginError.textContent = "That username is taken — try another.";
+        els.loginError.hidden = false;
+        return;
+      }
+
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(cred.user, { displayName: name });
+      els.authName.textContent = name;
       try {
-        await ensureProfile(cred.user, name);
+        await setDoc(usernameRef, { uid: cred.user.uid });
+        await ensureProfile(cred.user, { displayName: name, username });
       } catch (profileErr) {
-        showStatus("Signed up, but couldn't save your profile — friends may not see your name yet.", true);
+        showStatus("Signed up, but couldn't save your profile/username — try again from your account later.", true);
       }
     } else {
       await signInWithEmailAndPassword(auth, email, password);
@@ -458,11 +618,16 @@ function boot() {
   db = getFirestore(app);
   auth = getAuth(app);
 
+  watchProfiles();
+
   onAuthStateChanged(auth, async user => {
     currentUser = user;
     updateAuthUI(user);
     if (user) { try { await ensureProfile(user); } catch (e) { /* profile is best-effort; drawer still works */ } }
+    watchFriendships();
     if (section === "mine") showMyDrawer();
+    else if (section === "friends") renderFriendsSection();
+    else if (section === "commonwealth") renderCommonwealth();
   });
 
   showMyDrawer();

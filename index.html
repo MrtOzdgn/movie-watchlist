@@ -27,6 +27,7 @@
     <nav class="section-tabs" id="section-tabs">
       <button class="section-tab active" data-section="mine">MY DRAWER</button>
       <button class="section-tab" data-section="friends">FRIENDS</button>
+      <button class="section-tab" data-section="commonwealth">COMMONWEALTH<span id="request-badge" class="badge" hidden>0</span></button>
     </nav>
 
     <p id="viewing-banner" class="viewing-banner" hidden>
@@ -38,14 +39,19 @@
 
     <div id="friends-section" hidden>
       <div id="friends-list" class="friends-list"></div>
-      <p id="friends-empty" class="empty-msg" hidden>No one's signed up yet — be the first.</p>
+      <p id="friends-empty" class="empty-msg" hidden>No friends yet — add someone from the Commonwealth tab.</p>
+      <p id="friends-signed-out" class="empty-msg" hidden>Sign in to add and see friends.</p>
+    </div>
+
+    <div id="commonwealth-section" hidden>
+      <div id="commonwealth-list" class="friends-list"></div>
+      <p id="commonwealth-empty" class="empty-msg" hidden>No one's signed up yet — be the first.</p>
     </div>
 
     <div id="drawer-section">
       <nav class="tabs" id="status-tabs">
         <button class="tab active" data-filter="all">ALL</button>
         <button class="tab" data-filter="to-watch">TO WATCH</button>
-        <button class="tab" data-filter="watching">WATCHING</button>
         <button class="tab" data-filter="watched">WATCHED</button>
         <button id="add-btn" class="add-btn" hidden>+ FILE NEW CARD</button>
       </nav>
@@ -68,6 +74,7 @@
       <h2 id="auth-modal-title">Sign In</h2>
       <form id="login-form">
         <label id="name-field" hidden>Display name<input type="text" id="signup-name" autocomplete="name"></label>
+        <label id="username-field" hidden>Username<input type="text" id="signup-username" autocomplete="off" placeholder="lowercase, letters/numbers/_"></label>
         <label>Email<input type="email" id="login-email" required autocomplete="username"></label>
         <label>Password<input type="password" id="login-password" required autocomplete="current-password"></label>
         <p id="login-error" class="error-text" hidden></p>
