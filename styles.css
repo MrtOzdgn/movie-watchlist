@@ -171,8 +171,7 @@ body{
   font-size:0.55rem; color:var(--dim); padding:4px; line-height:1.2;
 }
 .card-info{ min-width:0; flex:1; }
-.card-no{ font-size:0.62rem; color:var(--dim); letter-spacing:0.03em; }
-.card-title{ font-size:0.98rem; font-weight:700; margin:6px 0 4px; line-height:1.25; }
+.card-title{ font-size:0.98rem; font-weight:700; margin:0 0 4px; line-height:1.25; }
 .card-meta{ font-size:0.72rem; color:var(--dim); }
 
 .card-comment-input{

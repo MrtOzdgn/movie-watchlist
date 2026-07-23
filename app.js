@@ -140,8 +140,7 @@ function renderGrid() {
   els.addBtn.hidden = viewingReadOnly;
 
   const editable = !viewingReadOnly;
-  els.grid.innerHTML = filtered.map((m, i) => {
-    const cardNo = String(i + 1).padStart(3, "0");
+  els.grid.innerHTML = filtered.map(m => {
     const safeId = escapeHtml(m.id);
     const posterMarkup = m.posterUrl
       ? `<img class="card-poster" src="${escapeHtml(m.posterUrl)}" alt="${escapeHtml(m.title)} poster">`
@@ -154,7 +153,6 @@ function renderGrid() {
         <div class="card-body">
           ${posterMarkup}
           <div class="card-info">
-            <div class="card-no">CARD NO. ${cardNo}</div>
             <div class="card-title">${escapeHtml(m.title)}</div>
             <div class="card-meta">${metaLine}</div>
           </div>
